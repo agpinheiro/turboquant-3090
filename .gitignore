@@ -1,0 +1,13 @@
+# upstream llama.cpp: clone separado, ver README (1.1 GB com build/)
+/llama.cpp/
+
+# logs de execucao (em -lv 5 chegam a gigabytes)
+/logs/
+*.log
+
+# corpus e resultados: regeneraveis, ver data/prepare-corpus.ps1
+/data/*.txt
+/data/*.json
+
+# modelos
+*.gguf
