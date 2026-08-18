@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ddg": {
+      "command": "npx",
+      "args": ["-y", "@oevortex/ddg_search"],
+      "timeout_ms": 30000
+    }
+  }
+}

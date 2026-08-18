@@ -51,6 +51,15 @@ rem  450k: carrega com 530 MiB livres e trava durante a geracao.
 set "SPEC=--spec-type draft-mtp --spec-draft-n-max %NMAX% -ctkd !KV! -ctvd !KV!"
 if "%NMAX%"=="0" set "SPEC="
 
+rem  MCP: ferramentas para a UI web (busca na web via DuckDuckGo, sem API key).
+rem  Opcional, nao custa VRAM.  set MCP=E:\DEV	urboquant\mcp-servers.json ^& start-server.bat
+rem  Com MCP ligado o servidor registra a rota /tools, que e o que a UI consome.
+rem  NAO use -ag/--agent aqui: ele liga TODAS as ferramentas nativas, incluindo
+rem  exec_shell_command e write_file - com --host 0.0.0.0 isso e execucao remota
+rem  para qualquer um na LAN. Busca na web nao precisa disso.
+set "MCPCFG="
+if not "%MCP%"=="" set "MCPCFG=--mcp-servers-config %MCP%"
+
 rem  Visao: set MMPROJ=E:/models/mmproj-F16.gguf ^& start-server.bat 11434
 set "VISION="
 if not "%MMPROJ%"=="" set "VISION=--mmproj %MMPROJ%"
@@ -84,6 +93,8 @@ echo   local  : http://127.0.0.1:%PORT%
 if not "%LANIP%"=="" echo   rede   : http://%LANIP%:%PORT%
 if not "!YARN!"=="" if not "!KV!"=="q2_1" echo   AVISO  : ctx acima de 262144 com KV !KV! nao cabe em 24 GB. Use set KV=q2_1.
 if !CTX! GTR 327680 if not "%NMAX%"=="0" echo   AVISO  : ctx acima de 327680 com MTP deixa ^<100 MiB livres e trava o PC. Use set NMAX=0.
+if not "%MCP%"=="" echo   tools  : MCP %MCP% ^(rota /tools ligada^)
+if not "%MCP%"=="" if "%LLAMA_API_KEY%"=="" echo   AVISO  : ferramentas expostas sem API key. Defina LLAMA_API_KEY ou use --host 127.0.0.1.
 if "%AUTH%"=="" echo   AVISO  : sem API key, qualquer um na rede pode usar. Defina LLAMA_API_KEY para exigir token.
 echo.
 nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
@@ -102,6 +113,7 @@ echo.
   -b 512 -ub 512 ^
   !SPEC! ^
   !YARN! ^
+  !MCPCFG! ^
   --log-file "%LOGDIR%\server-mtp.log" ^
   --host 0.0.0.0 --port !PORT! %AUTH% !VISION! !EXTRA!
 
