@@ -324,11 +324,22 @@ Medidos com `llama-fit-params`, orçamento de 22.276 MiB (24.576 menos desktop e
 
 O `llama-server` limitava o slot ao contexto de treino (`server-context.cpp:1202`) ignorando o
 YaRN — alocava o KV para o valor pedido e usava só 262k. A branch corrige isso: o cap passa a
-valer apenas quando não há RoPE scaling configurado. Com o patch, `run-450k-q2_1.ps1` serve
-**450.560 tokens pela interface web**, a ~9,5 t/s (não cabe MTP nesse contexto).
+valer apenas quando não há RoPE scaling configurado. Com o patch, `run-longo.ps1` serve contextos maiores
+pela interface web.
 
-Para uso diário, `q2_1` em 262k é melhor: como usa metade do KV do `q4_0`, sobra VRAM para o
-MTP — 53,9 t/s, contra os 60,1 t/s que o `q4_0` faz em 200k sem chegar aos 262k.
+O MTP custa ~1,5–2 GiB **fixos**, não proporcionais ao contexto: o contexto de draft
+compartilha células com o alvo. Isso muda onde vale ligá-lo:
+
+| config | geração (vazio) | VRAM livre | veredito |
+|---|---|---|---|
+| 450k + MTP | — | 319 MiB | **trava** — carrega, mas pagina durante a geração |
+| 450k sem MTP | 36,8 t/s | ~860 MiB | ok |
+| **327k + MTP** | **50,4 t/s** | **978 MiB** | **melhor dos dois** |
+
+`run-longo.ps1 -Ctx 327680 -Mtp` ganha nos dois eixos: 37 % mais rápido que 450k sem MTP e
+com mais folga. E como a geração cai conforme o contexto enche
+(`ms/token ≈ 27,2 + 0,182 × preenchido/1000`, de 36,8 t/s vazio para 9,5 t/s em 428k), os
+123k extras custariam caro justamente quando fossem usados.
 
 
 ## Estado do TurboQuant

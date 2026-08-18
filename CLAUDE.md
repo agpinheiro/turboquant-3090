@@ -221,8 +221,10 @@ correto** (São Petersburgo / soirée / Anna Pávlovna Schérer, a ~428k tokens 
   `run-450k-q2_1.ps1` sobe 450.560 tokens servidos pela UI. Sem o patch, use `llama-completion`.
 - **YaRN é obrigatório acima de 262.144:** `--rope-scaling yarn --rope-scale 4 --yarn-orig-ctx 262144`.
   A Qwen avisa que YaRN estático piora textos curtos, então é modo, não padrão.
-- **Em 450k não cabe MTP** (~2 GiB). Em 262k com `q2_1` cabe, e é a melhor config de uso diário:
-  `run-q2_1.ps1` dá 53,9 t/s com 262k, o que o `q4_0` não permitiria.
+- **O MTP custa ~1,5–2 GiB fixos**, não proporcionais ao contexto (o contexto de draft
+  compartilha células com o alvo). Medido: 450k + MTP carrega com 530 MiB livres mas cai para
+  319 durante a geração e trava; 327.680 + MTP fica com 978 MiB e faz **50,4 t/s**, melhor que
+  os 36,8 t/s de 450k sem MTP. Use `run-longo.ps1 -Ctx 327680 -Mtp`.
 - O buffer de compute cresce ~4.096 B/token **a mais** quando o KV é quantizado, porque o caminho
   de prefill dequantiza uma camada por vez para f16. Isso vale para qualquer tipo quantizado e já
   está embutido nas contas de teto acima.
