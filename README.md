@@ -165,6 +165,8 @@ Saída: `dispositivo modelo contexto compute` em MiB. Some e compare com sua VRA
 | `ab-q2.ps1` | A/B de qualidade dos tipos de 2 bits |
 | `medir-modelo.ps1 -Model <gguf>` | mede split CUDA0/host, teto de contexto e perplexidade de um `.gguf` |
 | `data/prepare-corpus.ps1` | recria o corpus de teste |
+| `claude-local.cmd [args]` | abre o Claude Code contra o servidor local sem alterar o `settings.json` |
+| `mcp-servers.json` | busca na web (DuckDuckGo via MCP) para a UI — ver `MCP` no `.bat` |
 | `qwen35-tolerant.jinja` | template corrigido, necessário para o Claude Code |
 
 Overrides do `.bat` por variável de ambiente: `CTX`, `KV`, `NMAX`, `PORT`, `ALIAS`, `MMPROJ`,
@@ -196,6 +198,12 @@ carregado.
 A base URL vai **sem `/v1`** (o Claude Code anexa `/v1/messages`). Use `ANTHROPIC_AUTH_TOKEN`, que
 vai em `Authorization: Bearer` e vale na hora — `ANTHROPIC_API_KEY` vai em `x-api-key` e exige uma
 aprovação única no modo interativo. Function calling e `thinking` nos três modos foram verificados.
+
+Isso substitui o endpoint da Anthropic para **todas** as sessões daquela máquina: o Claude Code tem
+um endpoint por sessão e não roteia por modelo — não existe chave de provider por modelo no
+settings.json, e `ANTHROPIC_CUSTOM_MODEL_OPTION` só acrescenta um rótulo à lista do `/model`, sem
+mudar para onde a requisição vai. Para manter os modelos da Anthropic intactos e usar o local só
+quando quiser, use o `claude-local.cmd`, que exporta essas variáveis apenas para o processo filho.
 
 **GitHub Copilot:** provider *Custom Endpoint*, API type *Chat Completions*, URL completa
 `http://<ip>:11434/v1/chat/completions`, API key com qualquer texto.
