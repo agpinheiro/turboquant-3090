@@ -14,4 +14,4 @@ nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
   -b 512 -ub 512 `
   --rope-scaling yarn --rope-scale 4 --yarn-orig-ctx 262144 `
   --log-file E:\DEV\turboquant\logs\server-450k.log `
-  --host 127.0.0.1 --port 11434
+  --host 0.0.0.0 --port 11434

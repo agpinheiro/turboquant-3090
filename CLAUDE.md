@@ -215,9 +215,10 @@ correto** (São Petersburgo / soirée / Anna Pávlovna Schérer, a ~428k tokens 
 
 ### Armadilhas específicas do contexto longo
 
-- **Acima de 262.144 o `llama-server` não serve.** Ele capa o slot ao contexto de treino
-  (`tools/server/server-context.cpp:1202`) e ignora o YaRN — aloca o KV para o valor pedido e usa
-  só 262k. Para contextos maiores use `llama-completion`.
+- **O `llama-server` capava o slot ao contexto de treino** (`tools/server/server-context.cpp:1202`)
+  ignorando o YaRN: alocava o KV para o valor pedido e usava só 262k. Corrigido na branch
+  `kv-q2_0` — o cap agora só vale quando não há RoPE scaling configurado. Com o patch,
+  `run-450k-q2_1.ps1` sobe 450.560 tokens servidos pela UI. Sem o patch, use `llama-completion`.
 - **YaRN é obrigatório acima de 262.144:** `--rope-scaling yarn --rope-scale 4 --yarn-orig-ctx 262144`.
   A Qwen avisa que YaRN estático piora textos curtos, então é modo, não padrão.
 - **Em 450k não cabe MTP** (~2 GiB). Em 262k com `q2_1` cabe, e é a melhor config de uso diário:

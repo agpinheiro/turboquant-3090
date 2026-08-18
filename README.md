@@ -322,10 +322,13 @@ Medidos com `llama-fit-params`, orçamento de 22.276 MiB (24.576 menos desktop e
 | Q4_K_M | ~295k | **~490k** |
 | Q3_K_M | ~426k | ~700k |
 
-Acima de 262.144 o **`llama-server` não serve**: ele limita o slot ao contexto de treino do
-modelo (`server-context.cpp:1202`) e ignora o YaRN. Use `llama-completion` para contextos
-maiores. Em compensação, como o `q2_1` usa metade do KV, dá para rodar 262k **com MTP**, o
-que o `q4_0` não permite — 53,9 t/s contra os 60,1 t/s do `q4_0` em 200k.
+O `llama-server` limitava o slot ao contexto de treino (`server-context.cpp:1202`) ignorando o
+YaRN — alocava o KV para o valor pedido e usava só 262k. A branch corrige isso: o cap passa a
+valer apenas quando não há RoPE scaling configurado. Com o patch, `run-450k-q2_1.ps1` serve
+**450.560 tokens pela interface web**, a ~9,5 t/s (não cabe MTP nesse contexto).
+
+Para uso diário, `q2_1` em 262k é melhor: como usa metade do KV do `q4_0`, sobra VRAM para o
+MTP — 53,9 t/s, contra os 60,1 t/s que o `q4_0` faz em 200k sem chegar aos 262k.
 
 
 ## Estado do TurboQuant
