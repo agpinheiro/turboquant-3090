@@ -155,19 +155,20 @@ Saída: `dispositivo modelo contexto compute` em MiB. Some e compare com sua VRA
 
 | script | o que faz |
 |---|---|
-| `start-server.bat [porta] [args]` | o de sempre: 180k, KV q4_0, MTP n=2, `--host 0.0.0.0` |
+| `start-server.bat [porta] [args]` | o de sempre: 180k, KV q4_0, MTP n=2, `--host 0.0.0.0`; YaRN automático acima de 262144 |
 | `run-200k.ps1` | `llama-cli` interativo, 200k, sem speculative decoding — baseline limpo |
 | `run-200k-mtp.ps1 [-NMax 2]` | server com MTP em `127.0.0.1:8080` |
 | `test-fullctx.ps1` | teste de contexto cheio pela API: prefill, t/s e recall |
 | `ab-perplexity.ps1` | A/B de qualidade do KV (f16 / q8_0 / q4_0 com e sem rotação) |
 | `run-q2_1.ps1 [-Port] [-Ctx]` | server com KV `q2_1` em 262k **com MTP** — a config rápida de contexto grande |
-| `run-450k-q2_1.ps1` | server com 450k e YaRN (o slot é capado em 262k; ver a seção do `q2_1`) |
+| `run-longo.ps1 [-Ctx] [-Mtp]` | contexto longo com `q2_1` e YaRN: 327680 com MTP, ou 450560 sem |
 | `ab-q2.ps1` | A/B de qualidade dos tipos de 2 bits |
 | `medir-modelo.ps1 -Model <gguf>` | mede split CUDA0/host, teto de contexto e perplexidade de um `.gguf` |
 | `data/prepare-corpus.ps1` | recria o corpus de teste |
 | `qwen35-tolerant.jinja` | template corrigido, necessário para o Claude Code |
 
-Overrides do `.bat` por variável de ambiente: `CTX`, `NMAX`, `PORT`, `ALIAS`, `LLAMA_API_KEY`.
+Overrides do `.bat` por variável de ambiente: `CTX`, `KV`, `NMAX`, `PORT`, `ALIAS`, `MMPROJ`,
+`LLAMA_API_KEY`. `NMAX=0` desliga o MTP, necessário acima de 327680.
 
 ## Servir na rede
 
@@ -325,8 +326,9 @@ Medidos com `llama-fit-params`, orçamento de 22.276 MiB (24.576 menos desktop e
 
 O `llama-server` limitava o slot ao contexto de treino (`server-context.cpp:1202`) ignorando o
 YaRN — alocava o KV para o valor pedido e usava só 262k. A branch corrige isso: o cap passa a
-valer apenas quando não há RoPE scaling configurado. Com o patch, `run-longo.ps1` serve contextos maiores
-pela interface web.
+valer apenas quando não há RoPE scaling configurado. Com o patch, `run-longo.ps1` e o
+`start-server.bat` servem contextos maiores pela interface web — ambos ligam
+`--rope-scaling yarn --rope-scale 4 --yarn-orig-ctx 262144` sozinhos acima de 262144.
 
 O MTP custa ~1,5–2 GiB **fixos**, não proporcionais ao contexto: o contexto de draft
 compartilha células com o alvo. Isso muda onde vale ligá-lo:

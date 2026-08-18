@@ -1,6 +1,6 @@
 # Servidor para uso manual com o KV em q2_1 (2.25 bpw).
-# 262144 e o teto do servidor: ele limita o slot ao contexto de treino do modelo
-# (server-context.cpp:1202) e ignora o YaRN. Acima disso, use llama-completion.
+# 262144 e o contexto de treino do modelo, e o teto sem YaRN. Para mais que isso use
+# run-longo.ps1 ou start-server.bat, que ligam o YaRN sozinhos acima de 262144.
 # Como o q2_1 usa metade do KV do q4_0, sobra VRAM para o MTP - que o q4_0
 # nao permitiria neste contexto.
 param([int]$Port = 11434, [int]$Ctx = 262144)
