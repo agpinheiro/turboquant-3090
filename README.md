@@ -67,8 +67,9 @@ Ajusta a `ms/token = 0,74 + 0,0098 × (pos/1000)`: custo constante de pesos/FFN/
 
 ### 1. Por que 200k parecia impossível
 
-O modelo é `qwen35`: 65 blocos (64 + 1 de MTP), `full_attention_interval = 4` → **só 16 camadas têm
-KV cache**; as outras 48 são SSM com estado constante que não cresce com o contexto.
+O Qwen3.8-27B usa uma arquitetura híbrida, que o GGUF identifica como `qwen35` em
+`general.architecture`: 65 blocos (64 + 1 de MTP), `full_attention_interval = 4` → **só 16 camadas
+têm KV cache**; as outras 48 são SSM com estado constante que não cresce com o contexto.
 
 KV por token = 16 camadas × 4 heads_kv × (256+256) = 32768 elementos. Medido com
 `llama-fit-params --fit-print on` (MiB em CUDA0, `-fa on`):
