@@ -18,13 +18,21 @@ set "LOGDIR=E:\DEV\turboquant\logs"
 if "%PORT%"=="" set "PORT=8080"
 if "%NMAX%"=="" set "NMAX=2"
 if "%ALIAS%"=="" set "ALIAS=qwen3.8-27b"
+
+rem  Tipo do KV cache. q4_0 = 4.5 bpw (padrao, seguro). q2_1 = 2.25 bpw, dobra o
+rem  contexto por 4.86%% de perplexidade - ver a secao do q2_1 no README.
+if "%KV%"=="" set "KV=q4_0"
 rem  180k e o padrao: cabe com o VS Code fechado. Com 200k + MTP o pico bate 23.9 GB,
 rem  o desktop fica sem VRAM, o WDDM pagina para a RAM e a maquina engasga.
 rem  Outros contextos:  set CTX=131072 ^& start-server.bat   (folgado, da para usar a GPU junto)
 rem                     set CTX=200000 ^& start-server.bat   (so com a GPU limpa)
+rem  Com KV=q2_1 o padrao sobe para 262144, o teto do servidor (acima disso ele capa
+rem  o slot no contexto de treino e ignora o YaRN; use llama-completion).
 rem  Com visao ligada o padrao cai para 128k, porque o projetor come ~885 MiB.
 if "%CTX%"=="" (
-    if "%MMPROJ%"=="" ( set "CTX=180000" ) else ( set "CTX=131072" )
+    if "%MMPROJ%"=="" (
+        if "%KV%"=="q2_1" ( set "CTX=262144" ) else ( set "CTX=180000" )
+    ) else ( set "CTX=131072" )
 )
 
 rem  Visao: set MMPROJ=E:/models/mmproj-F16.gguf ^& start-server.bat 11434
@@ -51,7 +59,7 @@ for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-NetIPAdd
 
 echo.
 echo   modelo : %ALIAS%  ^(%MODEL%^)
-echo   ctx    : %CTX%   KV q4_0   MTP n=%NMAX%
+echo   ctx    : !CTX!   KV !KV!   MTP n=%NMAX%
 echo   local  : http://127.0.0.1:%PORT%
 if not "%LANIP%"=="" echo   rede   : http://%LANIP%:%PORT%
 if "%AUTH%"=="" echo   AVISO  : sem API key, qualquer um na rede pode usar. Defina LLAMA_API_KEY para exigir token.
@@ -63,10 +71,10 @@ echo.
   -m "%MODEL%" ^
   -a "%ALIAS%" ^
   --chat-template-file "E:\DEV\turboquant\qwen35-tolerant.jinja" ^
-  -c %CTX% ^
+  -c !CTX! ^
   -np 1 ^
-  -ctk q4_0 -ctv q4_0 ^
-  -ctkd q4_0 -ctvd q4_0 ^
+  -ctk !KV! -ctv !KV! ^
+  -ctkd !KV! -ctvd !KV! ^
   -fa on ^
   -ngl 99 ^
   -fit off ^

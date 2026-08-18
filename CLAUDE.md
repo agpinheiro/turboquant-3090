@@ -191,6 +191,42 @@ Ajusta bem a `ms/token = 0.74 + 0.0098 * (pos/1000)`: custo constante de pesos/F
 seria ~10x. Extrapolando: ~372 t/s aos 200k, ~300 t/s aos 262k; encher 200k leva ~5.7 min.
 Use `cache_prompt` para não pagar isso duas vezes.
 
+## KV em 2 bits: `q2_1` (branch `kv-q2_0` do llama.cpp)
+
+O `q4_0` é o piso do llama.cpp e limita esta placa a ~295k. Construímos um tipo de 2,25 bpw.
+
+**Não use `q2_0` para KV.** Ele existe e os kernels CUDA que escrevemos funcionam, mas o formato
+usa `d = amax` com mapeamento `(q-1)·d`, o que torna o código `11` inalcançável: uso medido de
+10,2 / 79,6 / 10,2 / **0,0** %. Zera 80 % dos valores, SNR 2,88 dB, perplexidade +24,5 %.
+
+**Use `q2_1`.** Mesmo bloco (64 valores em 18 bytes), codebook `{-10, -3, +3, +10}` com escala
+`0,1510 × rms`. Inteiros porque o `vec_dot` usa `dp4a`; a razão 10/3 aproxima Lloyd-Max com 0,1 %
+de erro. Uso dos códigos 16,5 / 33,5 / 33,5 / 16,5 %, SNR 9,41 dB, perplexidade **+4,86 %**.
+
+| KV | bpw | PPL (ctx 8k, 4 chunks) | teto de contexto |
+|---|---|---|---|
+| f16 | 16 | 6.8594 | ~103k |
+| q4_0 | 4,5 | 6.8701 | ~295k |
+| q2_0 | 2,25 | 8.5422 | — (inutilizável) |
+| **q2_1** | **2,25** | **7.1927** | **~490k** |
+
+Verificado em 427.759 tokens com YaRN fator 4: prefill 381,6 t/s, geração 9,5 t/s, **recall
+correto** (São Petersburgo / soirée / Anna Pávlovna Schérer, a ~428k tokens de distância).
+
+### Armadilhas específicas do contexto longo
+
+- **Acima de 262.144 o `llama-server` não serve.** Ele capa o slot ao contexto de treino
+  (`tools/server/server-context.cpp:1202`) e ignora o YaRN — aloca o KV para o valor pedido e usa
+  só 262k. Para contextos maiores use `llama-completion`.
+- **YaRN é obrigatório acima de 262.144:** `--rope-scaling yarn --rope-scale 4 --yarn-orig-ctx 262144`.
+  A Qwen avisa que YaRN estático piora textos curtos, então é modo, não padrão.
+- **Em 450k não cabe MTP** (~2 GiB). Em 262k com `q2_1` cabe, e é a melhor config de uso diário:
+  `run-q2_1.ps1` dá 53,9 t/s com 262k, o que o `q4_0` não permitiria.
+- O buffer de compute cresce ~4.096 B/token **a mais** quando o KV é quantizado, porque o caminho
+  de prefill dequantiza uma camada por vez para f16. Isso vale para qualquer tipo quantizado e já
+  está embutido nas contas de teto acima.
+
+
 ## Scripts
 
 - **`start-server.bat [porta] [args extras]`** — o de sempre. 180k, KV q4_0, MTP n=2,

@@ -1,12 +1,15 @@
-# TurboQuant — 200k de contexto num único RTX 3090
+# TurboQuant — contexto longo num único RTX 3090
 
-Rodar o **Qwen3.8-27B em 180k–200k tokens de contexto numa única RTX 3090 (24 GB)**, inteiramente na
+Rodar o **Qwen3.8-27B com o maior contexto possível numa única RTX 3090 (24 GB)**, inteiramente na
 GPU, com velocidade utilizável. Este repositório é o registro do que foi medido, os scripts para
 reproduzir, e as correções necessárias para chegar lá.
 
-**Resultado:** 180k de contexto estável a 22,3 GB de VRAM, **60 t/s** com contexto vazio e
-**31,5 t/s** com 166k tokens carregados, com recall correto de informação a 166k tokens de
-distância. O ponto de partida era 7 t/s e uma máquina travada.
+**Resultados:**
+
+- **180k com KV `q4_0`**, o que já existia: 22,3 GB de VRAM, 60 t/s vazio, 31,5 t/s com 166k
+  carregados, recall correto. O ponto de partida era 7 t/s e uma máquina travada.
+- **428k com KV `q2_1`**, um tipo de 2,25 bpw que construímos para isso: prefill de 381 t/s e
+  recall correto de informação a ~428 mil tokens de distância, ao custo de 4,86 % de perplexidade.
 
 ## Índice
 
@@ -15,6 +18,7 @@ distância. O ponto de partida era 7 t/s e uma máquina travada.
 - [Reproduzir](#reproduzir)
 - [Scripts](#scripts)
 - [Servir na rede](#servir-na-rede)
+- [KV em 2 bits: o tipo `q2_1`](#kv-em-2-bits-o-tipo-q2_1)
 - [Estado do TurboQuant](#estado-do-turboquant)
 
 ## Resultados
@@ -155,6 +159,10 @@ Saída: `dispositivo modelo contexto compute` em MiB. Some e compare com sua VRA
 | `run-200k-mtp.ps1 [-NMax 2]` | server com MTP em `127.0.0.1:8080` |
 | `test-fullctx.ps1` | teste de contexto cheio pela API: prefill, t/s e recall |
 | `ab-perplexity.ps1` | A/B de qualidade do KV (f16 / q8_0 / q4_0 com e sem rotação) |
+| `run-q2_1.ps1 [-Port] [-Ctx]` | server com KV `q2_1` em 262k **com MTP** — a config rápida de contexto grande |
+| `run-450k-q2_1.ps1` | server com 450k e YaRN (o slot é capado em 262k; ver a seção do `q2_1`) |
+| `ab-q2.ps1` | A/B de qualidade dos tipos de 2 bits |
+| `medir-modelo.ps1 -Model <gguf>` | mede split CUDA0/host, teto de contexto e perplexidade de um `.gguf` |
 | `data/prepare-corpus.ps1` | recria o corpus de teste |
 | `qwen35-tolerant.jinja` | template corrigido, necessário para o Claude Code |
 
@@ -232,6 +240,93 @@ imagem entre 8 e 4096 tokens; `--image-max-tokens N` aperta mais. Nos 128k cabem
 
 Verificado ponta a ponta nos dois formatos — `image_url` em `/v1/chat/completions` e bloco `image`
 em `/v1/messages` — com respostas corretas sobre formas, cores, texto e contagem.
+
+## KV em 2 bits: o tipo `q2_1`
+
+O `q4_0` é o menor tipo de KV que o llama.cpp oferece, e com ele o teto nesta placa é
+~295k tokens. Para passar disso construímos um tipo novo. O trabalho está na branch
+`kv-q2_0` do clone do llama.cpp (não versionado aqui — veja [Reproduzir](#reproduzir)).
+
+### O que já existia e não servia
+
+O `GGML_TYPE_Q2_0` já existe no ggml, com bloco de 64 valores em 18 bytes = 2,25 bpw.
+Faltava só o suporte a KV em CUDA, que implementamos. Os kernels passaram nos testes —
+e o resultado foi **perplexidade 8,5422 contra 6,8594 do f16, uma regressão de 24,5 %**.
+
+A causa não é a quantização em si, é o formato. Ele usa `d = amax` e mapeia o código `q`
+para `(q-1)·d`. Como `|w| ≤ amax` por construção, o código `11` é inalcançável. Medido em
+dados gaussianos:
+
+| código | valor | uso |
+|---|---|---|
+| 00 | −d | 10,2 % |
+| 01 | 0 | **79,6 %** |
+| 10 | +d | 10,2 % |
+| 11 | +2d | **0,0 %** |
+
+Ele zera 80 % dos valores e desperdiça um quarto do espaço de código: gasta 2 bits para
+carregar 1,58. Faz sentido para pesos ternários estilo BitNet, para os quais foi criado.
+Para KV, destrói a informação.
+
+### `q2_1`: mesmo tamanho, codebook correto
+
+| | q2_0 | **q2_1** |
+|---|---|---|
+| escala | `amax` | `0,1510 × rms` |
+| níveis | {−1, 0, +1, +2}·d | **{−10, −3, +3, +10}·d** |
+| uso dos códigos | 10 / 80 / 10 / **0** % | 16,5 / 33,5 / 33,5 / 16,5 % |
+| SNR | 2,88 dB | **9,41 dB** |
+
+Os níveis inteiros são deliberados: o `vec_dot` do flash-attention usa `dp4a`, que exige
+operandos int8. A razão 10/3 aproxima o ótimo de Lloyd-Max para gaussiana (1,5104/0,4528)
+com erro de 0,1 %, então dá para ter o codebook quase ótimo **e** manter o produto escalar
+inteiro. A rotação de Hadamard, que o llama.cpp já aplica, é o que torna os dados
+gaussianos e justifica esse codebook.
+
+### Qualidade medida
+
+ctx 8192, 4 chunks, War and Peace, Qwen3.8-27B-Q4_K_M:
+
+| KV | bpw | PPL | vs f16 |
+|---|---|---|---|
+| f16 | 16 | 6.8594 | — |
+| q4_0 | 4,5 | 6.8701 | +0,16 % |
+| q2_0 | 2,25 | 8.5422 | +24,5 % |
+| **q2_1** | **2,25** | **7.1927** | **+4,86 %** |
+
+### Contexto longo: 427.759 tokens
+
+Com `q2_1` e YaRN (fator 4), prompt de 427.759 tokens numa única 3090:
+
+| | |
+|---|---|
+| prefill | **381,6 t/s** (18,7 min) |
+| geração | 9,5 t/s (sem MTP — não cabe neste contexto) |
+| recall | **correto** |
+
+A pergunta era onde a narrativa começa, com a resposta nas primeiras páginas — a ~428 mil
+tokens de distância. O modelo respondeu São Petersburgo, soirée, Anna Pávlovna Schérer.
+**KV em 2,25 bits preserva recall de longa distância.**
+
+Ressalva: esse teste move duas variáveis ao mesmo tempo, `q2_1` e YaRN. O acerto sugere que
+ambos estão bem, mas isolar exigiria repetir em 262k sem YaRN. E um probe único não é um
+NIAH completo — a agulha estava no começo, a posição mais distante e também a mais fácil de
+sondar.
+
+### Tetos de contexto
+
+Medidos com `llama-fit-params`, orçamento de 22.276 MiB (24.576 menos desktop e margem):
+
+| pesos | KV q4_0 | KV q2_1 |
+|---|---|---|
+| Q4_K_M | ~295k | **~490k** |
+| Q3_K_M | ~426k | ~700k |
+
+Acima de 262.144 o **`llama-server` não serve**: ele limita o slot ao contexto de treino do
+modelo (`server-context.cpp:1202`) e ignora o YaRN. Use `llama-completion` para contextos
+maiores. Em compensação, como o `q2_1` usa metade do KV, dá para rodar 262k **com MTP**, o
+que o `q4_0` não permite — 53,9 t/s contra os 60,1 t/s do `q4_0` em 200k.
+
 
 ## Estado do TurboQuant
 
