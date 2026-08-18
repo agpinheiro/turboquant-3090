@@ -1,7 +1,7 @@
-# TurboQuant — contexto longo num único RTX 3090
+# TurboQuant + llama.cpp — inferência de contexto longo
 
-Rodar o **Qwen3.8-27B com o maior contexto possível numa única RTX 3090 (24 GB)**, inteiramente na
-GPU, com velocidade utilizável. Este repositório é o registro do que foi medido, os scripts para
+**Qwen3.8-27B numa única RTX 3090 (24 GB)**, com o maior contexto possível, inteiramente na GPU e
+com velocidade utilizável. Este repositório é o registro do que foi medido, os scripts para
 reproduzir, e as correções necessárias para chegar lá.
 
 **Resultados:**
