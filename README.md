@@ -192,6 +192,47 @@ aprovação única no modo interativo. Function calling e `thinking` nos três m
 
 Sem `LLAMA_API_KEY` o server é aberto na rede, com CORS `*` e nenhuma autenticação.
 
+## Visão
+
+O modelo é multimodal e o projetor está no mesmo repositório da Unsloth. Baixe e aponte:
+
+```
+curl -L -o E:/models/mmproj-F16.gguf \
+  https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/mmproj-F16.gguf
+
+set MMPROJ=E:/models/mmproj-F16.gguf & start-server.bat 11434
+```
+
+Com `MMPROJ` definido o `.bat` desce o contexto para 128k sozinho, porque o projetor ocupa VRAM.
+Nada muda no template — o do Qwen3.8 já trata imagem e vídeo.
+
+### Custo medido
+
+| item | custo |
+|---|---|
+| pesos do projetor (`mmproj-F16.gguf`) | **884,6 MiB** |
+| pico extra ao processar imagem 1920×1080 | **105 MiB** |
+| geração com visão ativa | 57,2 t/s — **inalterada** |
+| total a 128k + visão | 23.220 MiB, ~1,3 GiB livres |
+
+**A troca sai quase de graça.** Descer de 180k para 128k libera ~1 GiB de KV, que paga os 885 MiB do
+projetor: o total de VRAM fica praticamente igual. Você troca 52k de contexto por visão.
+
+Uma imagem custa quase nada de contexto. O projetor é `qwen3vl_merger` com `patch_size=16` e
+`spatial_merge_size=2`, ou seja **1 token por bloco de 32×32 px**:
+
+| imagem | tokens |
+|---|---|
+| 640×360 | 220 |
+| 1024×1024 | 1024 |
+| 1920×1080 | 1980 |
+
+Medido: uma 1920×1080 deu 2108 tokens de prompt incluindo texto e template. O llama.cpp limita cada
+imagem entre 8 e 4096 tokens; `--image-max-tokens N` aperta mais. Nos 128k cabem dezenas de imagens.
+
+Verificado ponta a ponta nos dois formatos — `image_url` em `/v1/chat/completions` e bloco `image`
+em `/v1/messages` — com respostas corretas sobre formas, cores, texto e contagem.
+
 ## Estado do TurboQuant
 
 O estágio 1 do TurboQuant — rotação de Walsh-Hadamard antes de quantizar o KV — **já está no

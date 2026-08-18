@@ -22,7 +22,14 @@ rem  180k e o padrao: cabe com o VS Code fechado. Com 200k + MTP o pico bate 23.
 rem  o desktop fica sem VRAM, o WDDM pagina para a RAM e a maquina engasga.
 rem  Outros contextos:  set CTX=131072 ^& start-server.bat   (folgado, da para usar a GPU junto)
 rem                     set CTX=200000 ^& start-server.bat   (so com a GPU limpa)
-if "%CTX%"==""  set "CTX=180000"
+rem  Com visao ligada o padrao cai para 128k, porque o projetor come ~885 MiB.
+if "%CTX%"=="" (
+    if "%MMPROJ%"=="" ( set "CTX=180000" ) else ( set "CTX=131072" )
+)
+
+rem  Visao: set MMPROJ=E:/models/mmproj-F16.gguf ^& start-server.bat 11434
+set "VISION="
+if not "%MMPROJ%"=="" set "VISION=--mmproj %MMPROJ%"
 
 rem  primeiro argumento numerico vira a porta; o resto e repassado ao llama-server
 set "EXTRA=%*"
@@ -67,6 +74,6 @@ echo.
   --spec-type draft-mtp ^
   --spec-draft-n-max %NMAX% ^
   --log-file "%LOGDIR%\server-mtp.log" ^
-  --host 0.0.0.0 --port !PORT! %AUTH% !EXTRA!
+  --host 0.0.0.0 --port !PORT! %AUTH% !VISION! !EXTRA!
 
 endlocal
