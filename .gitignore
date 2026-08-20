@@ -9,6 +9,10 @@
 /data/*.txt
 /data/*.json
 
+# excecao: entrada fixa dos benches. E uma copia do start-server.bat, mas fica versionada
+# em vez de regenerada - o .bat muda, e uma carga de bench que muda sozinha nao reproduz.
+!/data/bench-code.txt
+
 # modelos
 *.gguf
 run.txt
