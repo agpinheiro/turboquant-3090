@@ -38,7 +38,8 @@ Modelo: `Qwen3.8-27B-Q4_K_M.gguf`, 15,93 GiB.
 
 `--spec-draft-n-max 2` é o ótimo. A cabeça MTP prevê 1 token (`nextn_predict_layers=1`); o terceiro
 token de rascunho derruba a aceitação de 70 % para 55 %, e a verificação desperdiçada custa mais
-que o ganho.
+que o ganho. Medido com KV `q4_0` — e o ótimo depende do tipo de KV, ver
+[Velocidade: o tipo de KV não é um eixo](#velocidade-o-tipo-de-kv-não-é-um-eixo).
 
 ### Contexto cheio — 166.312 tokens
 
@@ -163,6 +164,7 @@ Saída: `dispositivo modelo contexto compute` em MiB. Some e compare com sua VRA
 | `run-q2_1.ps1 [-Port] [-Ctx]` | server com KV `q2_1` em 262k **com MTP** — a config rápida de contexto grande |
 | `run-longo.ps1 [-Ctx] [-Mtp]` | contexto longo com `q2_1` e YaRN: 327680 com MTP, ou 450560 sem |
 | `ab-q2.ps1` | A/B de qualidade dos tipos de 2 bits |
+| `bench-kv.ps1 [-Kvs] [-Ctx]` | q8_0/q4_0/q2_1 com MTP fixo, em duas profundidades de contexto; pré-voo de VRAM com `llama-fit-params` |
 | `medir-modelo.ps1 -Model <gguf>` | mede split CUDA0/host, teto de contexto e perplexidade de um `.gguf` |
 | `data/prepare-corpus.ps1` | recria o corpus de teste |
 | `claude-local.cmd [args]` | abre o Claude Code contra o servidor local sem alterar o `settings.json` |
@@ -303,6 +305,42 @@ ctx 8192, 4 chunks, War and Peace, Qwen3.8-27B-Q4_K_M:
 | q4_0 | 4,5 | 6.8701 | +0,16 % |
 | q2_0 | 2,25 | 8.5422 | +24,5 % |
 | **q2_1** | **2,25** | **7.1927** | **+4,86 %** |
+
+### Velocidade: o tipo de KV não é um eixo
+
+A tabela de qualidade acima é o preço do `q2_1`. Faltava saber se havia um segundo preço — ou um
+segundo prêmio — no cronômetro: menos bits significa menos bytes lidos por passo, mas também mais
+trabalho por byte para dequantizar. `bench-kv.ps1` mede os dois lados na mesma subida do servidor,
+com MTP `n=4` constante para que só o tipo de KV varie.
+
+ctx 98304, prefixo de 72.747 tokens, `Qwen3.8-27B-Q4_K_M`:
+
+| KV | cache | curto (536 tok) | cheio (73k) | prefill | **ms/passo raso** | **ms/passo fundo** |
+|---|---|---|---|---|---|---|
+| q8_0 | 3413 MiB | 43,81 t/s | 30,53 t/s | 934 t/s | **55,67** | **74,11** |
+| q4_0 | 1877 MiB | 42,59 t/s | 28,06 t/s | 928 t/s | **55,68** | **74,71** |
+| q2_1 | 1013 MiB | 34,77 t/s | 28,77 t/s | 925 t/s | **55,85** | **76,22** |
+
+As colunas de t/s sugerem que o tipo importa muito — 18 % de diferença em contexto curto. As duas
+últimas mostram que não importa nada. Normalizando pelo **passo do modelo** em vez de por token
+gerado (`draft_n / n_max` = número de forward passes), o custo de um passo é o mesmo nos três:
+55,67 / 55,68 / 55,85 ms. Em contexto fundo o `q2_1` fica ~3 % mais lento, e o mesmo sinal aparece
+num terceiro workload — o **contrário** do que a economia de bytes previa.
+
+O kernel não é limitado por banda nessa profundidade. O `q8_0` lê 2,5 GiB de cache por passo e o
+termo de atenção vale 18,4 ms: ~137 GB/s efetivos, uns 15 % do pico da 3090. Cortar os bytes pela
+metade não compra nada, e a dequantização cobra a diferença. O prefill confirma: 1 % de
+espalhamento entre 8,5 e 2,25 bpw.
+
+**O que move o t/s é a aceitação de draft, e ela acompanha a precisão do KV** — 35,6 % / 34,0 % /
+23,3 % em contexto curto. Os −18 % do `q2_1` são exatamente isso: 1,94 tokens por passo contra 2,37
+do `q4_0`, razão 1,22, e a razão de t/s é 1,22. É a perplexidade +4,86 % aparecendo como
+throughput, porque a cabeça MTP lê o mesmo cache grosseiro e rascunha pior.
+
+Duas consequências. O tipo de KV se escolhe por VRAM e qualidade, como já vinha sendo feito — o
+cronômetro não tem opinião. E o ótimo de `--spec-draft-n-max` é **por tipo de KV**: o `n=2` da
+tabela de velocidade foi medido em `q4_0`, e com 23 % de aceitação o `q2_1` desperdiça verificação
+demais em `n=4`.
 
 ### Contexto longo: 427.759 tokens
 

@@ -213,6 +213,43 @@ de erro. Uso dos códigos 16,5 / 33,5 / 33,5 / 16,5 %, SNR 9,41 dB, perplexidade
 Verificado em 427.759 tokens com YaRN fator 4: prefill 381,6 t/s, geração 9,5 t/s, **recall
 correto** (São Petersburgo / soirée / Anna Pávlovna Schérer, a ~428k tokens de distância).
 
+### O tipo de KV não muda a velocidade (medido 2026-08-19, `bench-kv.ps1`)
+
+Escolha o tipo por VRAM e qualidade. Velocidade **não** é critério — e a tabela de t/s crua engana,
+porque com MTP no meio ela mede aceitação de draft, não banda de memória.
+
+ctx 98304, prefixo de 72.747 tokens, MTP n=4 constante nos três, `logs/bench-kv/resultados.csv`:
+
+| KV | cache | curto (536 tok) | cheio (73k) | prefill | **ms/passo raso** | **ms/passo fundo** | aceitação (curto) |
+|---|---|---|---|---|---|---|---|
+| q8_0 | 3413 MiB | 43,81 t/s | 30,53 t/s | 934 t/s | **55,67** | **74,11** | 35,6 % |
+| q4_0 | 1877 MiB | 42,59 t/s | 28,06 t/s | 928 t/s | **55,68** | **74,71** | 34,0 % |
+| q2_1 | 1013 MiB | 34,77 t/s | 28,77 t/s | 925 t/s | **55,85** | **76,22** | 23,3 % |
+
+Normalizando por **passo do modelo** (`draft_n / n_max` = forward passes; p_min=0, então o drafter
+sempre rascunha n_max), o custo de um passo é o mesmo nos três: 55,67 / 55,68 / 55,85 ms com contexto
+raso. Em contexto fundo o q2_1 fica ~3 % mais lento, e o sinal se repete num terceiro workload
+(`citar`: 74,87 / 75,21 / 76,76) — então é real, e é o **contrário** do esperado: menos bits custa
+um pouco mais, não menos.
+
+O kernel não é limitado por banda nessa profundidade. O q8_0 lê 2,5 GiB de cache por passo e o termo
+de atenção vale 18,4 ms → ~137 GB/s efetivos, ~15 % do pico da 3090. Cortar os bytes pela metade não
+compra nada e a dequantização do codebook cobra a diferença. O prefill confirma: 934 / 928 / 925 t/s,
+1 % de espalhamento entre 8,5 e 2,25 bpw.
+
+**Toda diferença visível de t/s é aceitação de draft, e ela acompanha a precisão do KV.** Os −18 % do
+q2_1 em contexto curto são exatamente isso: 1,94 tokens por passo contra 2,37 do q4_0, razão 1,22 —
+e a razão de t/s é 1,22. É a PPL +4,86 % do q2_1 aparecendo como throughput, porque a cabeça MTP lê
+o mesmo cache grosseiro e rascunha pior.
+
+Consequência prática: **o ótimo de `--spec-draft-n-max` é por tipo de KV.** Os n=2 da tabela de
+baselines foram medidos em q4_0; com aceitação de 23 % o q2_1 desperdiça verificação demais em n=4 e
+provavelmente quer n≤2. Sweep pendente.
+
+Ao ler o relatório do `bench-kv.ps1`, a tabela que vale é a **por passo**. A primeira (por token
+gerado) é o que o usuário sente, mas está confundida com a aceitação: por ela o q2_1 aparece com
+82 µs/1k contra 167 do q4_0, o que se leria como "q2_1 é 2× mais barato" — o oposto do medido.
+
 ### Armadilhas específicas do contexto longo
 
 - **O `llama-server` capava o slot ao contexto de treino** (`tools/server/server-context.cpp:1202`)
@@ -240,6 +277,9 @@ correto** (São Petersburgo / soirée / Anna Pávlovna Schérer, a ~428k tokens 
 - `run-200k-mtp.ps1 [-NMax 2]` — llama-server com MTP em `http://127.0.0.1:8080`, log em
   `logs/server-mtp.log`.
 - `test-fullctx.ps1` — dispara o teste de contexto cheio pela API e grava `logs/fullctx-result.json`.
+- `bench-kv.ps1 [-Kvs q8_0,q4_0,q2_1] [-Ctx 98304]` — q8_0/q4_0/q2_1 com MTP n=4 fixo, duas
+  profundidades de contexto na mesma subida do server. Faz pré-voo com `llama-fit-params` e pula o
+  tipo que não deixaria margem. `-DryRun` só estima e imprime os comandos.
 
 ## Servir para outra máquina
 
